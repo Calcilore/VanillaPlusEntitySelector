@@ -1,4 +1,4 @@
-package net.calcilore;
+package net.calcilore.vanillaplusentityselector;
 
 public class DoubleRange {
     public double min;

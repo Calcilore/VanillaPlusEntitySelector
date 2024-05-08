@@ -1,4 +1,4 @@
-package net.calcilore;
+package net.calcilore.vanillaplusentityselector;
 
 public class IntRange {
     public int min;

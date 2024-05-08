@@ -1,4 +1,4 @@
-package net.calcilore;
+package net.calcilore.vanillaplusentityselector;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
@@ -16,12 +16,14 @@ import org.bukkit.util.Vector;
 
 import java.util.*;
 
-// for later:
-// String[] result = input.split("\\s+(?![^\\[]*\\])");
-
 public class EntitySelector {
     private static final Random random = new Random();
     private static final String consoleLocationException = "You cannot use @p from command console!";
+    private static final String[] paramNames = {
+            "distance", "gamemode", "level", "limit", "name", "sort", "tag", "team", "type",
+            "advancement", "x_rotation", "y_rotation", "x", "y", "z", "dx", "dy", "dz"
+    };
+
 
     public static void isValidSelector(String entityName) throws EntitySelectException {
         entityName = entityName.trim();
@@ -174,60 +176,39 @@ public class EntitySelector {
 
                 switch (param) {
                     case "x":
-                        if (origin == null) {
-                            throw new EntitySelectException(consoleLocationException);
-                        }
-
-                        origin.setX(Double.parseDouble(value));
-                        currentWorldExclusive = true;
-                        break;
-
                     case "y":
+                    case "z": {
                         if (origin == null) {
                             throw new EntitySelectException(consoleLocationException);
                         }
 
-                        origin.setY(Double.parseDouble(value));
                         currentWorldExclusive = true;
-                        break;
+                        double dValue = Double.parseDouble(value);
 
-                    case "z":
-                        if (origin == null) {
-                            throw new EntitySelectException(consoleLocationException);
+                        switch (param) {
+                            case "x": origin.setX(dValue); break;
+                            case "y": origin.setY(dValue); break;
+                            case "z": origin.setZ(dValue); break;
                         }
-
-                        origin.setZ(Double.parseDouble(value));
-                        currentWorldExclusive = true;
                         break;
+                    }
 
                     // dx, dy, and dz don't need to be in high priority, but the code looks cleaner this way.
-                    case "dx": {
-                        if (origin == null) {
-                            throw new EntitySelectException(consoleLocationException);
-                        }
-
-                        volumeCheck.setX(Double.parseDouble(value));
-                        doVolumeCheck = true;
-                        break;
-                    }
-
-                    case "dy": {
-                        if (origin == null) {
-                            throw new EntitySelectException(consoleLocationException);
-                        }
-
-                        volumeCheck.setY(Double.parseDouble(value));
-                        doVolumeCheck = true;
-                        break;
-                    }
-
+                    case "dx":
+                    case "dy":
                     case "dz": {
                         if (origin == null) {
                             throw new EntitySelectException(consoleLocationException);
                         }
 
-                        volumeCheck.setZ(Double.parseDouble(value));
                         doVolumeCheck = true;
+                        double dValue = Double.parseDouble(value);
+
+                        switch (param) {
+                            case "dx": volumeCheck.setX(dValue); break;
+                            case "dy": volumeCheck.setY(dValue); break;
+                            case "dz": volumeCheck.setZ(dValue); break;
+                        }
                         break;
                     }
                 }
@@ -553,6 +534,43 @@ public class EntitySelector {
         }
 
         return new NoParamResult(foundEntities);
+    }
+
+    public static void tabCompleteSelection(List<String> tab, String arg) {
+        doTabComplete(tab, arg);
+
+        final String argLower = arg.toLowerCase();
+        tab.removeIf(ag -> !ag.toLowerCase().startsWith(argLower));
+    }
+
+    private static void doTabComplete(List<String> tab, String arg) {
+        tab.add("@a");
+        tab.add("@p");
+        tab.add("@s");
+        tab.add("@e");
+        tab.add("@r");
+
+        for (Player p : Bukkit.getOnlinePlayers()) {
+            tab.add(p.getName());
+        }
+
+        if (!arg.contains("[")) {
+            return;
+        }
+
+        int paramStart = arg.lastIndexOf(',')+1;
+        if (paramStart == 0) {
+            paramStart = arg.indexOf('[')+1;
+        }
+
+        String param = arg.substring(paramStart);
+        String preParam = arg.substring(0, paramStart);
+
+        Bukkit.getLogger().info(preParam + " : " + param);
+
+        for (String paramName : paramNames) {
+            tab.add(preParam + paramName + "=");
+        }
     }
 
     private static Location getLocation(CommandSender sender) {
