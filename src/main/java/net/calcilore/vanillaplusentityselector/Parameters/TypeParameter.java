@@ -29,6 +29,12 @@ public class TypeParameter extends Parameter {
 
     @Override
     public void executeParameter(List<Entity> foundEntities, String value, ParamSettings settings) throws EntitySelectException {
+        // if restricting to players, mark it as players only (this is before invert check so !players does normal behaviour)
+        if (value.equalsIgnoreCase("player")) {
+            settings.restrictToPlayers(foundEntities);
+            return;
+        }
+
         boolean invert = value.charAt(0) == '!';
         if (invert) {
             value = value.substring(1);

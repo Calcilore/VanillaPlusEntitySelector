@@ -5,6 +5,7 @@ import net.calcilore.vanillaplusentityselector.Parameters.*;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
@@ -136,6 +137,39 @@ public class EntitySelector {
         return newArgs.toArray(new String[0]);
     }
 
+    public static List<Entity> selectEntities(CommandSender sender, String entityName) throws EntitySelectException {
+        return doSelectEntities(sender, entityName, false, false);
+    }
+
+    public static Entity selectEntity(CommandSender sender, String entityName) throws EntitySelectException {
+        List<Entity> entities = doSelectEntities(sender, entityName, true, false);
+        if (entities.isEmpty()) {
+            return null;
+        }
+
+        return entities.get(0);
+    }
+
+    public static List<Player> selectPlayers(CommandSender sender, String entityName) throws EntitySelectException {
+        List<Entity> entities = doSelectEntities(sender, entityName, false, true);
+        List<Player> players = new ArrayList<>(entities.size());
+
+        for (Entity entity : entities) {
+            players.add((Player) entity);
+        }
+
+        return players;
+    }
+
+    public static Player selectPlayer(CommandSender sender, String entityName) throws EntitySelectException {
+        List<Entity> entities = doSelectEntities(sender, entityName, true, true);
+        if (entities.isEmpty()) {
+            return null;
+        }
+
+        return (Player)entities.get(0);
+    }
+
     @SuppressWarnings("unused")
     public static List<Entity> selectEntitiesPrint(CommandSender sender, String entityName) {
         try {
@@ -147,28 +181,64 @@ public class EntitySelector {
         return null;
     }
 
-    public static List<Entity> selectEntities(CommandSender sender, String entityName) throws EntitySelectException {
+    @SuppressWarnings("unused")
+    public static Entity selectEntityPrint(CommandSender sender, String entityName) {
+        try {
+            Entity e = selectEntity(sender, entityName);
+            if (e == null) {
+                throw new EntitySelectException("No entities found");
+            }
+
+            return e;
+        } catch (EntitySelectException e) {
+            sender.sendMessage(ChatColor.RED + e.getMessage());
+        }
+
+        return null;
+    }
+
+    @SuppressWarnings("unused")
+    public static List<Player> selectPlayersPrint(CommandSender sender, String entityName) {
+        try {
+            return selectPlayers(sender, entityName);
+        } catch (EntitySelectException e) {
+            sender.sendMessage(ChatColor.RED + e.getMessage());
+        }
+
+        return null;
+    }
+
+    @SuppressWarnings("unused")
+    public static Player selectPlayerPrint(CommandSender sender, String entityName) {
+        try {
+            Player e = selectPlayer(sender, entityName);
+            if (e == null) {
+                throw new EntitySelectException("No entities found");
+            }
+
+            return e;
+        } catch (EntitySelectException e) {
+            sender.sendMessage(ChatColor.RED + e.getMessage());
+        }
+
+        return null;
+    }
+
+    private static List<Entity> doSelectEntities(CommandSender sender, String entityName, boolean single, boolean limitPlayers) throws EntitySelectException {
         entityName = entityName.trim();
         isValidSelector(entityName);
 
         Location location = Util.getLocation(sender);
-
-        List<Entity> foundEntities;
-        int limit;
-        {
-            NoParamResult result = selectEntityNoParams(sender, entityName, location);
-            foundEntities = result.entities;
-            limit = result.limit;
-        }
+        ParamSettings settings = selectEntityNoParams(sender, entityName, location);
 
         // if it didn't find anything, or if there are no parameters
-        if (foundEntities.isEmpty() || entityName.charAt(0) != '@' || entityName.length() == 2) {
-            return foundEntities;
+        if (settings.entities.isEmpty() || entityName.charAt(0) != '@' || entityName.length() == 2) {
+            checkRequirements(settings, single, limitPlayers);
+            return settings.entities;
         }
 
         // find the parameters and extract the keys and values
         List<String[]> params = findParams(entityName);
-        ParamSettings settings = new ParamSettings(location, limit);
 
         for (String[] strings : params) {
             String param = strings[0];
@@ -176,26 +246,55 @@ public class EntitySelector {
 
             Parameter parameter = parameters.get(param);
             if (parameter != null) {
-                parameter.executeParameter(foundEntities, value, settings);
+                parameter.executeParameter(settings.entities, value, settings);
             } else {
                 throw new EntitySelectException("Unknown parameter: '" + param + "'");
             }
         }
+
+        checkRequirements(settings, single, limitPlayers);
 
         // do the volume check
         if (settings.doVolumeCheck) {
             BoundingBox area = new BoundingBox(settings.origin.getX(), settings.origin.getY(), settings.origin.getZ(),
                     settings.volumeCheck.getX(), settings.volumeCheck.getY(), settings.volumeCheck.getZ());
 
-            foundEntities.removeIf(entity -> !entity.getBoundingBox().overlaps(area));
+            settings.entities.removeIf(entity -> !entity.getBoundingBox().overlaps(area));
+        }
+
+        switch (settings.sortType) {
+            case "arbitrary": // this is the default, so it is already sorted like this
+                break;
+
+            case "nearest":
+            case "furthest": {
+                boolean nearest = settings.sortType.equals("nearest");
+
+                Util.sortByLocation(settings.entities, settings.origin, nearest);
+                break;
+            }
+
+            case "random":
+                Collections.shuffle(settings.entities, Util.random);
+                break;
         }
 
         // apply the limit
-        if (settings.limit != -1 && foundEntities.size() > settings.limit) {
-            foundEntities = foundEntities.subList(0, settings.limit);
+        if (settings.limit != -1 && settings.entities.size() > settings.limit) {
+            settings.entities = settings.entities.subList(0, settings.limit);
         }
 
-        return foundEntities;
+        return settings.entities;
+    }
+
+    private static void checkRequirements(ParamSettings settings, boolean single, boolean limitPlayers) throws EntitySelectException {
+        if (settings.limit != 1 && single) {
+            throw new EntitySelectException("Selection must have a limit of 1");
+        }
+
+        if (!settings.isPlayerExclusive() && limitPlayers) {
+            throw new EntitySelectException("Selection must only have players");
+        }
     }
 
     private static List<String[]> findParams(String entityName) throws EntitySelectException {
@@ -233,7 +332,7 @@ public class EntitySelector {
         return params;
     }
 
-    private static NoParamResult selectEntityNoParams(CommandSender sender, String entityName, Location location) throws EntitySelectException {
+    private static ParamSettings selectEntityNoParams(CommandSender sender, String entityName, Location location) throws EntitySelectException {
         List<Entity> foundEntities = new ArrayList<>();
 
         if (entityName.isEmpty()) {
@@ -248,82 +347,79 @@ public class EntitySelector {
             switch (entityName.charAt(1)) {
                 case 's':
                     if (!(sender instanceof Entity)) {
-                        return new NoParamResult(foundEntities);
+                        return new ParamSettings(foundEntities, location, -1, false, false);
                     }
 
                     foundEntities.add((Entity) sender);
-                    return new NoParamResult(foundEntities);
+                    return new ParamSettings(foundEntities, location, -1, false, false);
 
                 case 'p': {
                     if (location == null) {
                         throw new EntitySelectException(EntitySelectException.consoleLocationException);
                     }
 
-                    Util.sortByLocation(foundEntities, location, true);
+                    ParamSettings settings = new ParamSettings(foundEntities, location, 1, true, true);
 
-                    return new NoParamResult(foundEntities, 1);
+                    assert location.getWorld() != null;
+                    foundEntities.addAll(location.getWorld().getPlayers());
+                    settings.sortType = "nearest";
+
+                    return settings;
                 }
 
                 case 'a': {
-                    if (location == null) {
-                        return new NoParamResult(foundEntities);
-                    }
+                    foundEntities.addAll(Bukkit.getOnlinePlayers());
 
-                    assert location.getWorld() != null;
-                    foundEntities.addAll(location.getWorld().getPlayers());
-
-                    return new NoParamResult(foundEntities);
+                    return new ParamSettings(foundEntities, location, -1, true, false);
                 }
 
                 case 'e': {
-                    if (location == null) {
-                        return new NoParamResult(foundEntities);
+                    for (World world : Bukkit.getWorlds()) {
+                        foundEntities.addAll(world.getEntities());
                     }
 
-                    assert location.getWorld() != null;
-                    foundEntities.addAll(location.getWorld().getEntities());
-
-                    return new NoParamResult(foundEntities);
+                    return new ParamSettings(foundEntities, location, -1, false, false);
                 }
 
                 case 'r': {
-                    if (location == null) {
-                        return new NoParamResult(foundEntities);
-                    }
+                    ParamSettings settings = new ParamSettings(foundEntities, location, 1, true, false);
 
-                    assert location.getWorld() != null;
-                    foundEntities.addAll(location.getWorld().getPlayers());
-                    Collections.shuffle(foundEntities, Util.random);
+                    foundEntities.addAll(Bukkit.getOnlinePlayers());
+                    settings.sortType = "random";
 
-                    return new NoParamResult(foundEntities, 1);
+                    return settings;
                 }
             }
 
             throw new EntitySelectException("Unknown selector type '@" + entityName.charAt(1) + "'");
         }
 
+        boolean playerExclusive = true;
         Entity e = Bukkit.getPlayer(entityName);
         if (e != null) {
             foundEntities.add(e);
         } else {
-            e = Bukkit.getEntity(UUID.fromString(entityName));
-            if (e != null) {
-                foundEntities.add(e);
-            }
+            try {
+                e = Bukkit.getEntity(UUID.fromString(entityName));
+                if (e != null) {
+                    foundEntities.add(e);
+                    playerExclusive = false;
+                }
+            } catch (IllegalArgumentException ignored) { /* input was not a UUID, player doesn't exist */ }
         }
 
-        return new NoParamResult(foundEntities);
+        return new ParamSettings(foundEntities, location, 1, playerExclusive, false);
     }
 
     @SuppressWarnings("unused")
-    public static void tabCompleteSelection(List<String> tab, String arg, CommandSender sender) {
-        doTabComplete(tab, arg, sender);
+    public static void tabCompleteSelection(List<String> tab, String arg, CommandSender sender, boolean onlyPlayers) {
+        doTabComplete(tab, arg, sender, onlyPlayers);
 
         final String argLower = arg.toLowerCase();
         tab.removeIf(ag -> !ag.toLowerCase().startsWith(argLower));
     }
 
-    private static void doTabComplete(List<String> tab, String arg, CommandSender sender) {
+    private static void doTabComplete(List<String> tab, String arg, CommandSender sender, boolean onlyPlayers) {
         tab.add("@a");
         tab.add("@p");
         tab.add("@s");
@@ -334,7 +430,7 @@ public class EntitySelector {
             tab.add(p.getName());
         }
 
-        if (sender instanceof Player) {
+        if (!onlyPlayers && sender instanceof Player) {
             Player p = (Player) sender;
 
             List<Entity> entities = p.getNearbyEntities(5, 5, 5);
@@ -407,19 +503,5 @@ public class EntitySelector {
             }
         }
         return target;
-    }
-
-    private static class NoParamResult {
-        public List<Entity> entities;
-        public int limit;
-
-        public NoParamResult(List<Entity> entities, int limit) {
-            this.entities = entities;
-            this.limit = limit;
-        }
-
-        public NoParamResult(List<Entity> entities) {
-            this(entities, -1);
-        }
     }
 }

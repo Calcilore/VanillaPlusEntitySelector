@@ -9,11 +9,13 @@ import org.bukkit.util.Vector;
 import java.util.List;
 
 public class ParamSettings {
-    private boolean currentWorldExclusive = false;
-    private boolean playerExclusive = false;
+    private boolean currentWorldExclusive;
+    private boolean playerExclusive;
 
+    public List<Entity> entities;
     public Location origin;
     public int limit;
+    public String sortType = "arbitrary";
 
     // volumeCheck if for the dx, dy and dz params
     // in vanilla, this value defaults to 0, so if you only specify dx as 5, the volume to check
@@ -21,7 +23,7 @@ public class ParamSettings {
     public Vector volumeCheck = new Vector(0, 0, 0);
     public boolean doVolumeCheck = false;
 
-    public ParamSettings(Location location, int limit) {
+    public ParamSettings(List<Entity> entities, Location location, int limit, boolean playerExclusive, boolean currentWorldExclusive) {
         if (location != null) {
             origin = location.clone();
         } else {
@@ -29,6 +31,9 @@ public class ParamSettings {
         }
 
         this.limit = limit;
+        this.entities = entities;
+        this.playerExclusive = playerExclusive;
+        this.currentWorldExclusive = currentWorldExclusive;
     }
 
     public boolean isOriginInvalid() {
@@ -52,5 +57,9 @@ public class ParamSettings {
 
         playerExclusive = true;
         foundEntities.removeIf(entity -> !(entity instanceof Player));
+    }
+
+    public boolean isPlayerExclusive() {
+        return playerExclusive;
     }
 }
